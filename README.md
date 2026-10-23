@@ -2,6 +2,8 @@
 
 A compact on-screen keyboard for using a Mac with a USB touchscreen. Includes Thai Kedmanee and English, follows the active text field, and collapses into a small floating keyboard button.
 
+**Our setup: a MacBook connected to a Promethean ActivPanel Nickel touchscreen**, using HDMI 2 for video and the adjacent USB port labelled **Touch** for touch input. This fork was developed for that classroom setup.
+
 A fork of [OpenOSK by Christian Neff (secondtruth)](https://github.com/secondtruth/open-osk). The original project and its contributors provide the keyboard engine and accessibility features. This fork adds the Thai touchscreen workflow described below; it is not an official upstream release.
 
 ## Features
