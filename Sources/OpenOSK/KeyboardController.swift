@@ -79,6 +79,11 @@ final class KeyboardController: NSObject {
     private var inactivityTimer: Timer?
     private var activeProfile: AppProfile?
     private var currentFocus: FocusInfo?
+    private var diagnosticState = ""
+    private var isCollapsed = UserDefaults.standard.bool(forKey: "keyboardCollapsed")
+    private var collapsedButton: LanguageSwitchButton?
+    private let collapsedSize = NSSize(width: 44, height: 44)
+
 
     init(injector: KeyInjector, resolver: KeycodeResolver) {
         self.injector = injector
@@ -105,7 +110,7 @@ final class KeyboardController: NSObject {
         scanController.groupsProvider = { [weak self] in
             guard let self else { return [] }
             // Hidden keys must not be scanned: the user could not see them.
-            let keyboard = self.isPanelVisible ? self.keyboardView.scanGroups : []
+            let keyboard = self.isPanelVisible && !self.isCollapsed ? self.keyboardView.scanGroups : []
             return keyboard + self.panels.scanGroups
         }
         panels.onChange = { [weak self] in self?.scanController.reload() }
@@ -115,6 +120,7 @@ final class KeyboardController: NSObject {
             guard let self else { return }
             self.currentFocus = info
             self.handleTextFocusChange(info.isTextInput)
+            self.positionNearFocusedField()
             self.refreshTerminalMode()
             self.updateSuggestions()
         }
@@ -155,8 +161,42 @@ final class KeyboardController: NSObject {
         return true
     }
 
+    private func switchLanguage() {
+        let next = layout.id == "thai-kedmanee" ? "qwerty-us" : "thai-kedmanee"
+        guard LayoutStore.layout(id: next) != nil else { return }
+        modifierStates.removeAll()
+        tracker.reset()
+        preferences.layoutID = next
+    }
+
+    private func positionNearFocusedField(force: Bool = false) {
+        let enabled = UserDefaults.standard.object(forKey: "followTextFocus") as? Bool ?? true
+        let status = "trusted=\(KeyInjector.isTrusted()) enabled=\(enabled) text=\(currentFocus?.isTextInput ?? false) frame=\(String(describing: currentFocus?.frame))"
+        if status != diagnosticState {
+            diagnosticState = status
+            let directory = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask)[0]
+                .appendingPathComponent("Logs")
+            try? (status + "\n").write(to: directory.appendingPathComponent("OpenOSK-focus-status.txt"),
+                                     atomically: true, encoding: .utf8)
+        }
+        guard UserDefaults.standard.object(forKey: "followTextFocus") as? Bool ?? true,
+              panel.isVisible, currentFocus?.isTextInput == true,
+              let field = currentFocus?.frame,
+              (force || !panel.frame.contains(NSEvent.mouseLocation)),
+              let screen = NSScreen.screens.max(by: {
+                  ($0.frame.intersection(field).width * $0.frame.intersection(field).height)
+                      < ($1.frame.intersection(field).width * $1.frame.intersection(field).height)
+              }), screen.frame.intersects(field)
+        else { return }
+        let origin = KeyboardPlacement.origin(near: field, keyboardSize: panel.frame.size,
+                                               visibleFrame: screen.visibleFrame)
+        if abs(panel.frame.minX - origin.x) > 2 || abs(panel.frame.minY - origin.y) > 2 {
+            panel.setFrameOrigin(origin)
+        }
+    }
+
     private func applyScanningState() {
-        if preferences.scanningEnabled {
+        if preferences.scanningEnabled && !isCollapsed {
             scanController.interval = preferences.scanInterval
             let advanceKey = preferences.scanAdvanceKey
             scanController.start(
@@ -202,6 +242,60 @@ final class KeyboardController: NSObject {
         scanController.reload()
     }
 
+    @objc private func collapseKeyboard() {
+        variantPopup.dismiss()
+        isCollapsed = true
+        UserDefaults.standard.set(true, forKey: "keyboardCollapsed")
+        panelWasAutoShown = false
+        applyPresentation()
+        applyScanningState()
+        positionNearFocusedField(force: true)
+        noteActivity()
+    }
+
+    @objc private func expandKeyboard() {
+        isCollapsed = false
+        UserDefaults.standard.set(false, forKey: "keyboardCollapsed")
+        applyPresentation()
+        applyScanningState()
+        positionNearFocusedField(force: true)
+        // If there is no editable field, keep the expanded keyboard on its current screen.
+        if let screen = NSScreen.screens.first(where: { $0.frame.intersects(panel.frame) }) {
+            let visible = screen.visibleFrame.insetBy(dx: 8, dy: 8)
+            panel.setFrameOrigin(NSPoint(
+                x: min(max(panel.frame.minX, visible.minX), max(visible.minX, visible.maxX - panel.frame.width)),
+                y: min(max(panel.frame.minY, visible.minY), max(visible.minY, visible.maxY - panel.frame.height))))
+        }
+        noteActivity()
+    }
+
+    private func applyPresentation() {
+        let origin = panel.frame.origin
+        if isCollapsed {
+            let container = NSView(frame: NSRect(origin: .zero, size: collapsedSize))
+            let button = LanguageSwitchButton(title: "", target: self, action: #selector(expandKeyboard))
+            button.frame = container.bounds
+            button.isBordered = false
+            button.isCircular = true
+            button.symbolName = "keyboard"
+            button.font = .systemFont(ofSize: 20)
+            button.theme = Theme.theme(id: preferences.themeID)
+            button.showsStateIndicator = true
+            button.state = (UserDefaults.standard.object(forKey: "followTextFocus") as? Bool ?? true) ? .on : .off
+            button.setAccessibilityLabel(L("Expand keyboard"))
+            button.toolTip = L("Expand keyboard")
+            container.addSubview(button)
+            collapsedButton = button
+            panel.setContentSize(collapsedSize)
+            panel.contentView = container
+        } else {
+            collapsedButton = nil
+            panel.setContentSize(keyboardView.metrics.size(for: layout))
+            panel.contentView = keyboardView
+        }
+        panel.setFrameOrigin(origin)
+    }
+
     func hidePanel() {
         variantPopup.dismiss()
         panelWasAutoShown = false
@@ -211,6 +305,87 @@ final class KeyboardController: NSObject {
 
     func togglePanel() {
         isPanelVisible ? hidePanel() : showPanel()
+    }
+
+    /// Local diagnostic: exercise the real language button and render both layouts.
+    func checkLanguageButtonAndRender(to directory: URL) throws {
+        let original = preferences.layoutID
+        let originallyCollapsed = isCollapsed
+        let originalFocus = currentFocus
+        let originalOrigin = panel.frame.origin
+        let originalFollowMode = UserDefaults.standard.object(forKey: "followTextFocus")
+        if isCollapsed { expandKeyboard() }
+        defer {
+            currentFocus = originalFocus
+            preferences.layoutID = original
+            if originallyCollapsed { collapseKeyboard() }
+            panel.setFrameOrigin(originalOrigin)
+            if let originalFollowMode {
+                UserDefaults.standard.set(originalFollowMode, forKey: "followTextFocus")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "followTextFocus")
+            }
+        }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        for _ in 0..<2 {
+            let controls = [keyboardView.languageButton.frame, keyboardView.followButton.frame, keyboardView.minimizeButton.frame]
+            let bottomKeys = keyboardView.keyRows.last ?? []
+            guard let firstKey = keyboardView.keyRows.first?.first,
+                  firstKey.frame.minY == keyboardView.metrics.padding,
+                  controls.allSatisfy({ keyboardView.bounds.contains($0) }),
+                  !controls[0].intersects(controls[1]), !controls[0].intersects(controls[2]),
+                  !controls[1].intersects(controls[2]),
+                  bottomKeys.allSatisfy({ key in controls.allSatisfy { !key.frame.intersects($0) } })
+            else { throw NSError(domain: "OpenOSKCompactLayout", code: 4) }
+            let originalFollow = keyboardView.followButton.state
+            keyboardView.followButton.performClick(nil)
+            guard keyboardView.followButton.state != originalFollow,
+                  UserDefaults.standard.bool(forKey: "followTextFocus") == (keyboardView.followButton.state == .on)
+            else { throw NSError(domain: "OpenOSKFollowToggle", code: 5) }
+            keyboardView.followButton.performClick(nil)
+            guard keyboardView.followButton.state == originalFollow
+            else { throw NSError(domain: "OpenOSKFollowToggle", code: 6) }
+            guard let bitmap = keyboardView.bitmapImageRepForCachingDisplay(in: keyboardView.bounds)
+            else { throw NSError(domain: "OpenOSKPreview", code: 1) }
+            keyboardView.cacheDisplay(in: keyboardView.bounds, to: bitmap)
+            guard let data = bitmap.representation(using: .png, properties: [:])
+            else { throw NSError(domain: "OpenOSKPreview", code: 2) }
+            try data.write(to: directory.appendingPathComponent(layout.id + ".png"))
+            let expected = layout.id == "thai-kedmanee" ? "qwerty-us" : "thai-kedmanee"
+            keyboardView.languageButton.performClick(nil)
+            guard layout.id == expected, preferences.layoutID == expected
+            else { throw NSError(domain: "OpenOSKLanguageSwitch", code: 3) }
+        }
+        if let screen = NSScreen.main {
+            UserDefaults.standard.set(true, forKey: "followTextFocus")
+            let field = CGRect(x: screen.visibleFrame.midX - 100,
+                               y: screen.visibleFrame.midY, width: 200, height: 30)
+            currentFocus = FocusInfo(frame: field, isTextInput: true, role: "AXTextField", descriptionText: nil)
+            let fullSize = panel.frame.size
+            let savedLayout = layout.id
+            keyboardView.minimizeButton.performClick(nil)
+            guard isCollapsed, panel.frame.size == collapsedSize, let collapsedButton
+            else { throw NSError(domain: "OpenOSKCollapse", code: 7) }
+            let firstOrigin = panel.frame.origin
+            let nextField = field.offsetBy(dx: 200, dy: 100)
+            currentFocus = FocusInfo(frame: nextField, isTextInput: true, role: "AXTextField", descriptionText: nil)
+            positionNearFocusedField(force: true)
+            guard panel.frame.origin != firstOrigin,
+                  !panel.frame.intersects(nextField)
+            else { throw NSError(domain: "OpenOSKCollapsedFollow", code: 8) }
+            if let view = panel.contentView, let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) {
+                view.cacheDisplay(in: view.bounds, to: bitmap)
+                try bitmap.representation(using: .png, properties: [:])?.write(
+                    to: directory.appendingPathComponent("collapsed.png"))
+            }
+            collapsedButton.performClick(nil)
+            guard !isCollapsed, panel.frame.size == fullSize, layout.id == savedLayout,
+                  panel.contentView === keyboardView
+            else { throw NSError(domain: "OpenOSKExpand", code: 9) }
+        }
+        print("MINIMIZE_FOLLOW_RESTORE_OK: real minimize/expand buttons, 44pt target follows field, layout preserved")
+        print("COMPACT_LAYOUT_OK: no header, controls within bottom row, follow toggle works")
+        print("LANGUAGE_BUTTON_OK: Thai → English → Thai (or reverse)")
     }
 
     func clearLearnedWords() {
@@ -232,7 +407,8 @@ final class KeyboardController: NSObject {
 
     private func rebuildKeyboardView() {
         var metrics = KeyboardMetrics(scale: CGFloat(preferences.scale))
-        metrics.showsCurrentText = preferences.showCurrentText
+        metrics.showsCurrentText = false
+        metrics.showsSuggestionBar = false
         let dwell = DwellConfiguration(
             enabled: preferences.dwellEnabled,
             time: preferences.dwellTime
@@ -244,6 +420,12 @@ final class KeyboardController: NSObject {
             dwell: dwell,
             theme: Theme.theme(id: preferences.themeID)
         )
+        view.onMinimize = { [weak self] in self?.collapseKeyboard() }
+        view.onLanguageSwitch = { [weak self] in self?.switchLanguage() }
+        view.onFollowToggle = { [weak self] enabled in
+            UserDefaults.standard.set(enabled, forKey: "followTextFocus")
+            if enabled { self?.positionNearFocusedField() }
+        }
         view.onKeyPress = { [weak self] key in self?.handleKey(key) }
         view.onKeyLongPress = { [weak self] key, keyView in
             self?.handleLongPress(key, keyView: keyView) ?? false
@@ -256,11 +438,7 @@ final class KeyboardController: NSObject {
         }
         keyboardView = view
 
-        let size = metrics.size(for: layout)
-        let origin = panel.frame.origin
-        panel.setContentSize(size)
-        panel.contentView = view
-        panel.setFrameOrigin(origin)
+        applyPresentation()
         panel.alphaValue = CGFloat(preferences.opacity)
         refreshKeyCaps()
         updateSuggestions()
@@ -277,6 +455,7 @@ final class KeyboardController: NSObject {
             panel.animator().alphaValue = CGFloat(preferences.opacity)
         }
         inactivityTimer?.invalidate()
+        guard !isCollapsed else { return }
         guard preferences.inactivityFadeEnabled, preferences.inactivityFadeDelay > 0 else {
             return
         }
@@ -290,7 +469,7 @@ final class KeyboardController: NSObject {
     }
 
     private func fadeOut() {
-        guard panel.isVisible else { return }
+        guard panel.isVisible, !isCollapsed else { return }
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.6
             panel.animator().alphaValue = max(0.12, CGFloat(preferences.opacity) * 0.2)
@@ -367,7 +546,8 @@ final class KeyboardController: NSObject {
         case .predictionsEnabled, .terminalCompletionsEnabled:
             updateSuggestions()
         case .learningEnabled, .texterPasteMode, .wordlistLanguages, .autoCapitalization,
-             .autoSpacing, .autoShowOnTextFocus, .openPanelIDs, .keyClickSound, .panelOrigins:
+             .autoSpacing, .autoShowOnTextFocus, .openPanelIDs, .keyClickSound, .panelOrigins,
+             .followTextFocus, .keyboardCollapsed:
             // Read at the point of use.
             break
         }
@@ -410,6 +590,10 @@ final class KeyboardController: NSObject {
     }
 
     private func handleTextFocusChange(_ hasTextFocus: Bool) {
+        if isCollapsed {
+            if hasTextFocus && !isPanelVisible { showPanel() }
+            return
+        }
         guard preferences.autoShowOnTextFocus else { return }
         if hasTextFocus {
             if !isPanelVisible {

@@ -27,6 +27,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         keyboardController.showPanel()
         keyboardController.panels.restoreOpenPanels()
 
+        if let index = CommandLine.arguments.firstIndex(of: "--local-ui-check"),
+           CommandLine.arguments.indices.contains(index + 1) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                do {
+                    try self.keyboardController.checkLanguageButtonAndRender(
+                        to: URL(fileURLWithPath: CommandLine.arguments[index + 1]))
+                    print("LOCAL_UI_CHECK_OK")
+                    NSApp.terminate(nil)
+                } catch {
+                    fputs("UI check failed: \(error)\n", stderr)
+                    exit(1)
+                }
+            }
+            return
+        }
+
         if isSmokeTest {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                 print("SMOKE_TEST_OK")

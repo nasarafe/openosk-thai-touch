@@ -121,3 +121,11 @@
 "Next Track" = "Next Track";
 "Previous Track" = "Previous Track";
 "Macro" = "Macro";
+
+/* Thai touch controls */
+"Switch Thai / English" = "Switch Thai / English";
+"Follow text field" = "Follow text field";
+"Follow text field: on" = "Follow text field: on";
+"Follow text field: off" = "Follow text field: off";
+"Minimize keyboard" = "Minimize keyboard";
+"Expand keyboard" = "Expand keyboard";

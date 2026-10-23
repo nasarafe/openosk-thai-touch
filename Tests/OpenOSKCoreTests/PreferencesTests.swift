@@ -38,7 +38,7 @@ import Testing
         let log = ChangeLog(of: preferences)
 
         preferences.opacity = 0.5
-        preferences.themeID = "dark"
+        preferences.themeID = "light"
 
         #expect(log.keys == [.opacity, .themeID])
     }

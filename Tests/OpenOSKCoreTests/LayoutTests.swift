@@ -7,6 +7,7 @@ import Testing
         let ids = LayoutStore.bundledLayouts().map(\.id)
         #expect(ids.contains("qwertz-de"))
         #expect(ids.contains("qwerty-us"))
+        #expect(ids.contains("thai-kedmanee"))
     }
 
     @Test func qwertzLayoutStructure() throws {

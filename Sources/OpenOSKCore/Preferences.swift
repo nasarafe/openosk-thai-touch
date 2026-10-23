@@ -7,34 +7,38 @@ public final class Preferences {
 
     private let defaults: UserDefaults
 
+    public static let defaultSettings: [String: Any] = [
+        Key.layoutID.rawValue: "thai-kedmanee",
+        Key.scale.rawValue: 0.9194826013901654,
+        Key.opacity.rawValue: 0.9063957509273239,
+        Key.predictionsEnabled.rawValue: true,
+        Key.learningEnabled.rawValue: true,
+        Key.terminalCompletionsEnabled.rawValue: true,
+        Key.texterPasteMode.rawValue: true,
+        Key.wordlistLanguages.rawValue: ["de", "en"],
+        Key.autoCapitalization.rawValue: true,
+        Key.autoSpacing.rawValue: true,
+        Key.showCurrentText.rawValue: false,
+        Key.dwellEnabled.rawValue: false,
+        Key.dwellTime.rawValue: 0.9,
+        Key.inactivityFadeEnabled.rawValue: true,
+        Key.inactivityFadeDelay.rawValue: 10.0,
+        Key.autoShowOnTextFocus.rawValue: true,
+        Key.scanningEnabled.rawValue: false,
+        Key.scanInterval.rawValue: 1.2,
+        Key.scanSwitchKey.rawValue: "space",
+        Key.openPanelIDs.rawValue: [String](),
+        Key.themeID.rawValue: "dark",
+        Key.keyClickSound.rawValue: true,
+        Key.systemDictionaryEnabled.rawValue: false,
+        Key.scanAdvanceKey.rawValue: "none",
+        Key.followTextFocus.rawValue: true,
+        Key.keyboardCollapsed.rawValue: false,
+    ]
+
     public init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        defaults.register(defaults: [
-            Key.layoutID.rawValue: "qwertz-de",
-            Key.scale.rawValue: 1.0,
-            Key.opacity.rawValue: 0.97,
-            Key.predictionsEnabled.rawValue: true,
-            Key.learningEnabled.rawValue: true,
-            Key.terminalCompletionsEnabled.rawValue: true,
-            Key.texterPasteMode.rawValue: true,
-            Key.wordlistLanguages.rawValue: ["de", "en"],
-            Key.autoCapitalization.rawValue: true,
-            Key.autoSpacing.rawValue: true,
-            Key.showCurrentText.rawValue: true,
-            Key.dwellEnabled.rawValue: false,
-            Key.dwellTime.rawValue: 0.9,
-            Key.inactivityFadeEnabled.rawValue: true,
-            Key.inactivityFadeDelay.rawValue: 10.0,
-            Key.autoShowOnTextFocus.rawValue: false,
-            Key.scanningEnabled.rawValue: false,
-            Key.scanInterval.rawValue: 1.2,
-            Key.scanSwitchKey.rawValue: "space",
-            Key.openPanelIDs.rawValue: [String](),
-            Key.themeID.rawValue: "system",
-            Key.keyClickSound.rawValue: false,
-            Key.systemDictionaryEnabled.rawValue: false,
-            Key.scanAdvanceKey.rawValue: "none",
-        ])
+        defaults.register(defaults: Self.defaultSettings)
     }
 
     /// Every stored preference; the raw value is the `UserDefaults` key.
@@ -63,11 +67,13 @@ public final class Preferences {
         case keyClickSound
         case systemDictionaryEnabled
         case scanAdvanceKey
+        case followTextFocus
+        case keyboardCollapsed
         case panelOrigins
     }
 
     public var layoutID: String {
-        get { defaults.string(forKey: Key.layoutID.rawValue) ?? "qwertz-de" }
+        get { defaults.string(forKey: Key.layoutID.rawValue) ?? "thai-kedmanee" }
         set { set(newValue, forKey: .layoutID) }
     }
 
@@ -182,7 +188,7 @@ public final class Preferences {
 
     /// Visual theme id ("system", "high-contrast", "dark", "light").
     public var themeID: String {
-        get { defaults.string(forKey: Key.themeID.rawValue) ?? "system" }
+        get { defaults.string(forKey: Key.themeID.rawValue) ?? "dark" }
         set { set(newValue, forKey: .themeID) }
     }
 

@@ -1,0 +1,31 @@
+{
+  "autoCapitalization": true,
+  "autoShowOnTextFocus": true,
+  "autoSpacing": true,
+  "dwellEnabled": false,
+  "dwellTime": 0.9,
+  "followTextFocus": true,
+  "inactivityFadeDelay": 10.0,
+  "inactivityFadeEnabled": true,
+  "keyClickSound": true,
+  "keyboardCollapsed": false,
+  "keyboardOpacity": 0.9063957509273239,
+  "keyboardScale": 0.9194826013901654,
+  "layoutID": "thai-kedmanee",
+  "learningEnabled": true,
+  "openPanelIDs": [],
+  "predictionsEnabled": true,
+  "scanAdvanceKey": "none",
+  "scanInterval": 1.2,
+  "scanSwitchKey": "space",
+  "scanningEnabled": false,
+  "showCurrentText": false,
+  "systemDictionaryEnabled": false,
+  "terminalCompletionsEnabled": true,
+  "texterPasteMode": true,
+  "themeID": "dark",
+  "wordlistLanguages": [
+    "de",
+    "en"
+  ]
+}
